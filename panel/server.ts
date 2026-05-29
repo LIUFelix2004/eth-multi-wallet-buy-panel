@@ -513,8 +513,9 @@ function loadState(): PanelState {
     privateKeys?: string[];
   };
   const legacyKeys = Array.isArray(raw.privateKeys) ? raw.privateKeys : [];
+  const envKeys = parsePrivateKeys(process.env.PRIVATE_KEYS || "");
   const rawWallets = Array.isArray(raw.wallets) ? raw.wallets : [];
-  const wallets = normalizeWallets(rawWallets, legacyKeys);
+  const wallets = normalizeWallets(rawWallets, [...legacyKeys, ...envKeys]);
   const groups = uniqueSorted([
     ...(Array.isArray(raw.groups) ? raw.groups.map((item) => sanitizeGroupName(String(item))) : []),
     ...wallets.flatMap((wallet) => wallet.groups)
