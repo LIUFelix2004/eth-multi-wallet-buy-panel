@@ -1182,6 +1182,9 @@ async function runBatchTrade(
               options?.amountMinWei ?? amountWei,
               options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
             );
+      if (action !== "borrow") {
+        log(job, `#${entry.index + 1} selected amount ${effectiveAmountWei.toString()}`);
+      }
 
       const result = await waitWithTimeout(
         (async () => {
@@ -1221,6 +1224,9 @@ async function runBatchTrade(
               options?.amountMinWei ?? amountWei,
               options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
             );
+      if (action !== "borrow") {
+        log(job, `#${entry.index + 1} selected amount ${effectiveAmountWei.toString()}`);
+      }
 
       return waitWithTimeout(
         (async () => {
@@ -1803,7 +1809,8 @@ function isWithinTimeWindow(now: Date, start?: string, end?: string) {
   const endMinutes = timeOfDayToMinutes(end);
   if (startMinutes === undefined || endMinutes === undefined) return true;
 
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const chinaNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+  const currentMinutes = chinaNow.getHours() * 60 + chinaNow.getMinutes();
   if (startMinutes <= endMinutes) {
     return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
   }
@@ -1842,10 +1849,10 @@ function pickEffectiveAmountWei(config: PanelConfig, min: bigint, max: bigint) {
     return effectiveMin;
   }
 
-  const span = effectiveMax - effectiveMin;
-  const cap = span > 1000n ? 1000n : span;
-  const offset = BigInt(randomIntBetween(0, Number(cap)));
-  const candidate = effectiveMin + offset;
+  const effectiveMinNum = Number(effectiveMin);
+  const effectiveMaxNum = Number(effectiveMax);
+  const randomValue = Math.random() * (effectiveMaxNum - effectiveMinNum) + effectiveMinNum;
+  const candidate = BigInt(Math.floor(randomValue));
   validateAmountAgainstRisk(config, candidate);
   return candidate;
 }

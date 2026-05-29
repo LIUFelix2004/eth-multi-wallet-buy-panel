@@ -181,6 +181,7 @@ function bindEvents() {
   ["marketAmountMin", "marketAmountMax", "marketIntervalMin", "marketIntervalMax"].forEach((id) => {
     document.querySelector(`#${id}`)?.addEventListener("change", syncDerivedTaskInputs);
   });
+  document.querySelector("#defaultMaxConcurrency")?.addEventListener("change", syncDerivedTaskInputs);
 }
 
 async function loadState() {
@@ -696,7 +697,7 @@ async function runBatchBuy() {
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
     timeEnd: document.querySelector("#marketTimeEnd").value,
-    maxConcurrency: Number(document.querySelector("#buyTaskConcurrency").value || "1")
+    maxConcurrency: Number(document.querySelector("#defaultMaxConcurrency").value || document.querySelector("#buyTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量买入", payload, async () => {
     const response = await api("/api/tasks/buy", { method: "POST", body: JSON.stringify(payload) });
@@ -716,7 +717,7 @@ async function runBatchSell() {
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
     timeEnd: document.querySelector("#marketTimeEnd").value,
-    maxConcurrency: Number(document.querySelector("#sellTaskConcurrency").value || "1")
+    maxConcurrency: Number(document.querySelector("#defaultMaxConcurrency").value || document.querySelector("#sellTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量卖出", payload, async () => {
     const response = await api("/api/tasks/sell", { method: "POST", body: JSON.stringify(payload) });
@@ -734,7 +735,7 @@ async function runBatchBorrow() {
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
     timeEnd: document.querySelector("#marketTimeEnd").value,
-    maxConcurrency: Number(document.querySelector("#buyTaskConcurrency").value || "1")
+    maxConcurrency: Number(document.querySelector("#defaultMaxConcurrency").value || document.querySelector("#buyTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量借贷", payload, async () => {
     const response = await api("/api/tasks/borrow", { method: "POST", body: JSON.stringify(payload) });
@@ -754,7 +755,7 @@ async function runBatchRepay() {
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
     timeEnd: document.querySelector("#marketTimeEnd").value,
-    maxConcurrency: Number(document.querySelector("#sellTaskConcurrency").value || "1")
+    maxConcurrency: Number(document.querySelector("#defaultMaxConcurrency").value || document.querySelector("#sellTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量偿还", payload, async () => {
     const response = await api("/api/tasks/repay", { method: "POST", body: JSON.stringify(payload) });
