@@ -10,6 +10,7 @@ const state = {
   walletViewMode: "compact",
   expandedWalletIds: new Set(),
   marketAction: "buy",
+  amountMode: "fixed",
   assetMeta: {
     reserveSymbol: "JU",
     reserveDecimals: 18,
@@ -170,6 +171,14 @@ function bindEvents() {
       state.marketAction = button.getAttribute("data-market-action");
       syncMarketActionTabs();
       syncMarketActionHint();
+    });
+  });
+
+  document.querySelectorAll("[data-amount-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.amountMode = button.getAttribute("data-amount-mode") || "fixed";
+      syncAmountModeButtons();
+      syncMarketAmountLabels();
     });
   });
 
@@ -607,6 +616,15 @@ function toggleOpsPanel(kind) {
 
 function syncMarketAmountLabels() {
   if (state.marketAction === "borrow") {
+    if (state.amountMode === "percent") {
+      elements.marketAmountHint.textContent = `借贷模式下：按 ${state.assetMeta.tokenSymbol} 持仓比例设置抵押数量，例如 10 表示抵押当前持仓的 10%`;
+      elements.marketAmountMinLabel.textContent = "最小比例 %";
+      elements.marketAmountMaxLabel.textContent = "最大比例 %";
+      document.querySelector("#marketAmountMax").disabled = false;
+      document.querySelector("#marketAmountMax").placeholder = "例如 50";
+      elements.marketUnitHint.textContent = `按比例模式会根据每个钱包当前 ${state.assetMeta.tokenSymbol} 持仓，动态计算本笔抵押数量。`;
+      return;
+    }
     elements.marketAmountHint.textContent = `借贷模式下：只填写抵押数量(${state.assetMeta.tokenSymbol})，系统自动按最大可借执行`;
     elements.marketAmountMinLabel.textContent = "抵押数量";
     elements.marketAmountMaxLabel.textContent = "自动最大可借";
@@ -617,6 +635,15 @@ function syncMarketAmountLabels() {
     return;
   }
   if (state.marketAction === "repay") {
+    if (state.amountMode === "percent") {
+      document.querySelector("#marketAmountMax").disabled = false;
+      document.querySelector("#marketAmountMax").placeholder = "例如 50";
+      elements.marketAmountHint.textContent = `偿还模式下：按 ${state.assetMeta.reserveSymbol} 可用余额比例设置，例如 10 表示使用当前支付币余额的 10% 作为偿还目标`;
+      elements.marketAmountMinLabel.textContent = "最小比例 %";
+      elements.marketAmountMaxLabel.textContent = "最大比例 %";
+      elements.marketUnitHint.textContent = `按比例模式会基于每个钱包当前 ${state.assetMeta.reserveSymbol} 余额，动态计算偿还数量，并继续受当前需还金额限制。`;
+      return;
+    }
     document.querySelector("#marketAmountMax").disabled = true;
     document.querySelector("#marketAmountMax").value = "";
     document.querySelector("#marketAmountMax").placeholder = `按需还金额与支付币余额自动截断(${state.assetMeta.reserveSymbol})`;
@@ -628,6 +655,13 @@ function syncMarketAmountLabels() {
   }
   document.querySelector("#marketAmountMax").disabled = false;
   document.querySelector("#marketAmountMax").placeholder = "";
+  if (state.amountMode === "percent" && state.marketAction === "sell") {
+    elements.marketAmountHint.textContent = `卖出模式下：按 ${state.assetMeta.tokenSymbol} 持仓比例设置，例如 10 表示卖出当前持仓的 10%`;
+    elements.marketAmountMinLabel.textContent = "最小比例 %";
+    elements.marketAmountMaxLabel.textContent = "最大比例 %";
+    elements.marketUnitHint.textContent = `按比例模式会根据每个钱包当前 ${state.assetMeta.tokenSymbol} 持仓，动态计算本笔卖出数量。`;
+    return;
+  }
   elements.marketAmountHint.textContent = `可设置金额范围，按页面显示单位填写`;
   elements.marketAmountMinLabel.textContent = "最小金额";
   elements.marketAmountMaxLabel.textContent = "最大金额";
@@ -655,6 +689,20 @@ function syncMarketActionTabs() {
     button.classList.toggle("active", button.getAttribute("data-market-action") === state.marketAction);
   });
   syncMarketAmountLabels();
+  syncAmountModeButtons();
+}
+
+function syncAmountModeButtons() {
+  const allowPercent = state.marketAction !== "buy";
+  document.querySelectorAll("[data-amount-mode]").forEach((button) => {
+    const mode = button.getAttribute("data-amount-mode");
+    const isPercent = mode === "percent";
+    button.classList.toggle("active", state.amountMode === mode);
+    button.disabled = isPercent && !allowPercent;
+  });
+  if (!allowPercent && state.amountMode === "percent") {
+    state.amountMode = "fixed";
+  }
 }
 
 function syncMarketActionHint() {
@@ -711,6 +759,7 @@ async function runBatchSell() {
   const payload = {
     ...buildSelectionPayload(),
     amount: document.querySelector("#sellTaskAmount").value.trim(),
+    amountMode: state.amountMode,
     amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
     amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.tokenDecimals),
     intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
@@ -730,6 +779,7 @@ async function runBatchSell() {
 async function runBatchBorrow() {
   const payload = {
     ...buildSelectionPayload(),
+    amountMode: state.amountMode,
     depositAmount: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
     intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
@@ -748,6 +798,7 @@ async function runBatchBorrow() {
 async function runBatchRepay() {
   const payload = {
     ...buildSelectionPayload(),
+    amountMode: state.amountMode,
     amount: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
     amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
     amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.reserveDecimals),
