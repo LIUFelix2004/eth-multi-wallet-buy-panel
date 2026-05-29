@@ -185,6 +185,7 @@ type BatchExecutionOptions = ExecutionWindow & {
   amountMinWei?: bigint;
   amountMaxWei?: bigint;
   depositAmountWei?: bigint;
+  repeatUntilWindowEnd?: boolean;
 };
 
 const rootDir = resolve(".");
@@ -402,7 +403,8 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
       intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
       timeStart: sanitizeTimeOfDay(body?.timeStart),
-      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd),
+      repeatUntilWindowEnd: true
     };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-buy", {
@@ -432,7 +434,8 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
       intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
       timeStart: sanitizeTimeOfDay(body?.timeStart),
-      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd),
+      repeatUntilWindowEnd: true
     };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-sell", {
@@ -461,7 +464,8 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
       intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
       timeStart: sanitizeTimeOfDay(body?.timeStart),
-      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd),
+      repeatUntilWindowEnd: true
     };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-borrow", {
@@ -494,7 +498,8 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
       intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
       timeStart: sanitizeTimeOfDay(body?.timeStart),
-      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd),
+      repeatUntilWindowEnd: true
     };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-repay", {
@@ -1159,7 +1164,7 @@ async function runBatchTrade(
   const perWalletTimeoutMs = Math.max(30000, context.state.config.receiptTimeoutMs + 60000);
   if (action !== "borrow") validateAmountAgainstRisk(panelState.config, amountWei);
   if (depositAmountWei !== undefined) validateAmountAgainstRisk(panelState.config, depositAmountWei);
-  job.summary.total = targets.length;
+  job.summary.total = 0;
   log(job, `${action.toUpperCase()} started for ${targets.length} wallets`);
 
   const connectedTargets = targets.map((entry) => ({
@@ -1167,87 +1172,114 @@ async function runBatchTrade(
     wallet: entry.wallet.connect(context.provider)
   }));
 
-  if (maxConcurrency <= 1) {
-    const serialResults: JobResult[] = [];
-    for (let i = 0; i < connectedTargets.length; i++) {
-      const entry = connectedTargets[i];
-      assertJobNotCancelled(job);
-      await waitForExecutionWindow(job, options);
+  const results: JobResult[] = [];
+  let round = 1;
 
-      const effectiveAmountWei =
-        action === "borrow"
-          ? amountWei
-          : pickEffectiveAmountWei(
-              panelState.config,
-              options?.amountMinWei ?? amountWei,
-              options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
-            );
-      if (action !== "borrow") {
-        log(job, `#${entry.index + 1} selected amount ${effectiveAmountWei.toString()}`);
-      }
+  while (true) {
+    assertJobNotCancelled(job);
+    await waitForExecutionWindow(job, options);
 
-      const result = await waitWithTimeout(
-        (async () => {
-          if (action === "buy") return buyForWallet(job, context, entry, effectiveAmountWei);
-          if (action === "sell") return sellForWallet(job, context, entry, effectiveAmountWei);
-          if (action === "borrow") {
-            return borrowForWallet(job, context, entry, amountWei, depositAmountWei ?? amountWei);
-          }
-          return repayForWallet(job, context, entry, effectiveAmountWei);
-        })(),
-        perWalletTimeoutMs
-      );
-
-      serialResults.push(result);
-      pushResult(job, result);
-      evaluateRiskAfterResult(job);
-      log(job, `#${result.index + 1} ${result.action} ${result.status}${result.error ? `: ${result.error}` : ""}`);
-
-      if (i < connectedTargets.length - 1) {
-        await waitRandomInterval(job, options);
-      }
+    if (options?.timeStart && options?.timeEnd && !isWithinTimeWindow(new Date(), options.timeStart, options.timeEnd)) {
+      break;
     }
 
-    return serialResults;
+    log(job, `Starting batch round ${round}`);
+
+    if (maxConcurrency <= 1) {
+      for (let i = 0; i < connectedTargets.length; i++) {
+        const entry = connectedTargets[i];
+        assertJobNotCancelled(job);
+
+        if (options?.timeStart && options?.timeEnd && !isWithinTimeWindow(new Date(), options.timeStart, options.timeEnd)) {
+          log(job, `Execution window ended during round ${round}`);
+          return results;
+        }
+
+        const effectiveAmountWei =
+          action === "borrow"
+            ? amountWei
+            : pickEffectiveAmountWei(
+                panelState.config,
+                options?.amountMinWei ?? amountWei,
+                options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
+              );
+        if (action !== "borrow") {
+          log(job, `round ${round} #${entry.index + 1} selected amount ${effectiveAmountWei.toString()}`);
+        }
+
+        const result = await waitWithTimeout(
+          (async () => {
+            if (action === "buy") return buyForWallet(job, context, entry, effectiveAmountWei, round);
+            if (action === "sell") return sellForWallet(job, context, entry, effectiveAmountWei, round);
+            if (action === "borrow") {
+              return borrowForWallet(job, context, entry, amountWei, depositAmountWei ?? amountWei, round);
+            }
+            return repayForWallet(job, context, entry, effectiveAmountWei, round);
+          })(),
+          perWalletTimeoutMs
+        );
+
+        results.push(result);
+        job.summary.total += 1;
+        pushResult(job, result);
+        evaluateRiskAfterResult(job);
+        log(job, `round ${round} #${result.index + 1} ${result.action} ${result.status}${result.error ? `: ${result.error}` : ""}`);
+
+        if (i < connectedTargets.length - 1) {
+          await waitRandomInterval(job, options);
+        }
+      }
+    } else {
+      job.summary.total += connectedTargets.length;
+      const roundResults = await runWithConcurrency(
+        connectedTargets.map((entry) => async () => {
+          assertJobNotCancelled(job);
+
+          const effectiveAmountWei =
+            action === "borrow"
+              ? amountWei
+              : pickEffectiveAmountWei(
+                  panelState.config,
+                  options?.amountMinWei ?? amountWei,
+                  options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
+                );
+          if (action !== "borrow") {
+            log(job, `round ${round} #${entry.index + 1} selected amount ${effectiveAmountWei.toString()}`);
+          }
+
+          return waitWithTimeout(
+            (async () => {
+              if (action === "buy") return buyForWallet(job, context, entry, effectiveAmountWei, round);
+              if (action === "sell") return sellForWallet(job, context, entry, effectiveAmountWei, round);
+              if (action === "borrow") {
+                return borrowForWallet(job, context, entry, amountWei, depositAmountWei ?? amountWei, round);
+              }
+              return repayForWallet(job, context, entry, effectiveAmountWei, round);
+            })(),
+            perWalletTimeoutMs
+          );
+        }),
+        maxConcurrency,
+        () =>
+          job.cancelRequested ||
+          Boolean(options?.timeStart && options?.timeEnd && !isWithinTimeWindow(new Date(), options.timeStart, options.timeEnd)),
+        (result) => {
+          results.push(result);
+          pushResult(job, result);
+          evaluateRiskAfterResult(job);
+          log(job, `round ${round} #${result.index + 1} ${result.action} ${result.status}${result.error ? `: ${result.error}` : ""}`);
+        }
+      );
+      void roundResults;
+    }
+
+    if (!(options?.repeatUntilWindowEnd && options?.timeStart && options?.timeEnd && isWithinTimeWindow(new Date(), options.timeStart, options.timeEnd))) {
+      break;
+    }
+
+    round += 1;
   }
 
-  const results = await runWithConcurrency(
-    connectedTargets.map((entry) => async () => {
-      assertJobNotCancelled(job);
-      await waitForExecutionWindow(job, options);
-
-      const effectiveAmountWei =
-        action === "borrow"
-          ? amountWei
-          : pickEffectiveAmountWei(
-              panelState.config,
-              options?.amountMinWei ?? amountWei,
-              options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
-            );
-      if (action !== "borrow") {
-        log(job, `#${entry.index + 1} selected amount ${effectiveAmountWei.toString()}`);
-      }
-
-      return waitWithTimeout(
-        (async () => {
-          if (action === "buy") return buyForWallet(job, context, entry, effectiveAmountWei);
-          if (action === "sell") return sellForWallet(job, context, entry, effectiveAmountWei);
-          if (action === "borrow") {
-            return borrowForWallet(job, context, entry, amountWei, depositAmountWei ?? amountWei);
-          }
-          return repayForWallet(job, context, entry, effectiveAmountWei);
-        })(),
-        perWalletTimeoutMs
-      );
-    }),
-    maxConcurrency,
-    () => job.cancelRequested,
-    (result) => {
-      pushResult(job, result);
-      evaluateRiskAfterResult(job);
-      log(job, `#${result.index + 1} ${result.action} ${result.status}${result.error ? `: ${result.error}` : ""}`);
-    }
-  );
   return results;
 }
 
