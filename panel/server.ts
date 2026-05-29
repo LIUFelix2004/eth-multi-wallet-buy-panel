@@ -170,8 +170,18 @@ type RandomTaskPayload = TaskSelection & {
 
 const rootDir = resolve(".");
 const publicDir = resolve(rootDir, "panel", "public");
-const dataDir = resolve(rootDir, "panel-data");
-const reportsDir = resolve(rootDir, "reports");
+const runtimeRoot = process.env.RUNTIME_DATA_ROOT
+  ? resolve(process.env.RUNTIME_DATA_ROOT)
+  : rootDir;
+const dataDir = process.env.PANEL_DATA_DIR
+  ? resolve(process.env.PANEL_DATA_DIR)
+  : resolve(runtimeRoot, "panel-data");
+const reportsDir = process.env.REPORTS_DIR
+  ? resolve(process.env.REPORTS_DIR)
+  : resolve(runtimeRoot, "reports");
+const walletsDir = process.env.WALLETS_DIR
+  ? resolve(process.env.WALLETS_DIR)
+  : resolve(runtimeRoot, "wallets");
 const statePath = resolve(dataDir, "state.json");
 const preferredPort = Number(process.env.PORT || process.env.PANEL_PORT || "3210");
 
@@ -195,6 +205,7 @@ const marketAbi = [
 
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(reportsDir, { recursive: true });
+mkdirSync(walletsDir, { recursive: true });
 
 let panelState = loadState();
 const jobs = new Map<string, Job>();

@@ -228,15 +228,29 @@ RANDOM_TRADE_TOKEN_KEEP_AMOUNT=0
 RANDOM_TRADE_SELL_DIVISOR=5
 ```
 
-### 4. Add Persistent Volumes
+### 4. Add Persistent Volume
 
-Railway should mount persistent storage for these runtime directories:
+If your Railway UI only allows a single volume, that is fine.
 
-- `/app/panel-data`
-- `/app/reports`
-- optionally `/app/wallets` if you want uploaded/generated wallet files to survive restarts
+Create one volume and mount it to:
 
-Without persistent volumes:
+```text
+/app/runtime-data
+```
+
+Then add these extra environment variables:
+
+```bash
+RUNTIME_DATA_ROOT=/app/runtime-data
+```
+
+This will automatically store:
+
+- panel state in `/app/runtime-data/panel-data`
+- reports in `/app/runtime-data/reports`
+- wallet files in `/app/runtime-data/wallets`
+
+Without persistent storage:
 
 - panel state will reset on redeploy
 - job reports will disappear
