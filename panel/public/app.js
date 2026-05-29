@@ -755,13 +755,29 @@ async function runBatchBuy() {
   });
 }
 
+function buildAmountModePayload(decimals) {
+  const minRaw = document.querySelector("#marketAmountMin").value.trim();
+  const maxRaw = document.querySelector("#marketAmountMax").value.trim();
+  if (state.amountMode === "percent") {
+    return {
+      amountMode: "percent",
+      amountMin: minRaw,
+      amountMax: maxRaw || minRaw
+    };
+  }
+  return {
+    amountMode: "fixed",
+    amountMin: toBaseUnits(minRaw, decimals),
+    amountMax: toBaseUnits(maxRaw, decimals)
+  };
+}
+
 async function runBatchSell() {
+  const amountPayload = buildAmountModePayload(state.assetMeta.tokenDecimals);
   const payload = {
     ...buildSelectionPayload(),
     amount: document.querySelector("#sellTaskAmount").value.trim(),
-    amountMode: state.amountMode,
-    amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
-    amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.tokenDecimals),
+    ...amountPayload,
     intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
@@ -777,10 +793,14 @@ async function runBatchSell() {
 }
 
 async function runBatchBorrow() {
+  const amountPayload = buildAmountModePayload(state.assetMeta.tokenDecimals);
   const payload = {
     ...buildSelectionPayload(),
-    amountMode: state.amountMode,
-    depositAmount: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
+    ...amountPayload,
+    depositAmount:
+      state.amountMode === "percent"
+        ? document.querySelector("#marketAmountMin").value.trim()
+        : toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
     intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
@@ -796,12 +816,14 @@ async function runBatchBorrow() {
 }
 
 async function runBatchRepay() {
+  const amountPayload = buildAmountModePayload(state.assetMeta.reserveDecimals);
   const payload = {
     ...buildSelectionPayload(),
-    amountMode: state.amountMode,
-    amount: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
-    amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
-    amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.reserveDecimals),
+    ...amountPayload,
+    amount:
+      state.amountMode === "percent"
+        ? document.querySelector("#marketAmountMin").value.trim()
+        : toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
     intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
     intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
     timeStart: document.querySelector("#marketTimeStart").value,
