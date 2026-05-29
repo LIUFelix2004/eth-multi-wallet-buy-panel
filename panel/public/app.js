@@ -565,7 +565,7 @@ function syncDerivedTaskInputs() {
   const maxInterval = Number(document.querySelector("#marketIntervalMax").value || "0");
   const effectiveAmount = minAmount || fromBaseUnits(document.querySelector("#buyAmount").value.trim(), state.assetMeta.reserveDecimals);
   const effectiveSellAmount = maxAmount || minAmount || fromBaseUnits(document.querySelector("#sellAmount").value.trim(), state.assetMeta.tokenDecimals);
-  const effectiveConcurrency = Math.max(1, state.selectedWalletIds.size || Number(document.querySelector("#defaultMaxConcurrency").value || "1"));
+  const effectiveConcurrency = Math.max(1, Number(document.querySelector("#defaultMaxConcurrency").value || "1"));
   const averageIntervalSec = [minInterval, maxInterval].filter((value) => value > 0).reduce((sum, value, _, arr) => sum + value / arr.length, 0);
 
   document.querySelector("#buyTaskAmount").value = toBaseUnits(effectiveAmount, state.assetMeta.reserveDecimals);
@@ -690,6 +690,12 @@ async function runBatchBuy() {
   const payload = {
     ...buildSelectionPayload(),
     amount: document.querySelector("#buyTaskAmount").value.trim(),
+    amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
+    amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.reserveDecimals),
+    intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
+    intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
+    timeStart: document.querySelector("#marketTimeStart").value,
+    timeEnd: document.querySelector("#marketTimeEnd").value,
     maxConcurrency: Number(document.querySelector("#buyTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量买入", payload, async () => {
@@ -704,6 +710,12 @@ async function runBatchSell() {
   const payload = {
     ...buildSelectionPayload(),
     amount: document.querySelector("#sellTaskAmount").value.trim(),
+    amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
+    amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.tokenDecimals),
+    intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
+    intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
+    timeStart: document.querySelector("#marketTimeStart").value,
+    timeEnd: document.querySelector("#marketTimeEnd").value,
     maxConcurrency: Number(document.querySelector("#sellTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量卖出", payload, async () => {
@@ -718,6 +730,10 @@ async function runBatchBorrow() {
   const payload = {
     ...buildSelectionPayload(),
     depositAmount: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.tokenDecimals),
+    intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
+    intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
+    timeStart: document.querySelector("#marketTimeStart").value,
+    timeEnd: document.querySelector("#marketTimeEnd").value,
     maxConcurrency: Number(document.querySelector("#buyTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量借贷", payload, async () => {
@@ -732,6 +748,12 @@ async function runBatchRepay() {
   const payload = {
     ...buildSelectionPayload(),
     amount: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
+    amountMin: toBaseUnits(document.querySelector("#marketAmountMin").value.trim(), state.assetMeta.reserveDecimals),
+    amountMax: toBaseUnits(document.querySelector("#marketAmountMax").value.trim(), state.assetMeta.reserveDecimals),
+    intervalMinSec: Number(document.querySelector("#marketIntervalMin").value || "0"),
+    intervalMaxSec: Number(document.querySelector("#marketIntervalMax").value || "0"),
+    timeStart: document.querySelector("#marketTimeStart").value,
+    timeEnd: document.querySelector("#marketTimeEnd").value,
     maxConcurrency: Number(document.querySelector("#sellTaskConcurrency").value || "1")
   };
   await confirmTaskRun("批量偿还", payload, async () => {

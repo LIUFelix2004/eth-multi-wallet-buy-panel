@@ -150,9 +150,15 @@ type TaskSelection = {
 
 type BatchTaskPayload = TaskSelection & {
   amount?: string;
+  amountMin?: string;
+  amountMax?: string;
   depositAmount?: string;
   debtAmount?: string;
   maxConcurrency?: number;
+  intervalMinSec?: number;
+  intervalMaxSec?: number;
+  timeStart?: string;
+  timeEnd?: string;
 };
 
 type RandomTaskPayload = TaskSelection & {
@@ -166,6 +172,19 @@ type RandomTaskPayload = TaskSelection & {
   tokenKeepAmount?: string;
   maxSellAmount?: string;
   sellDivisor?: number;
+};
+
+type ExecutionWindow = {
+  timeStart?: string;
+  timeEnd?: string;
+  intervalMinMs?: number;
+  intervalMaxMs?: number;
+};
+
+type BatchExecutionOptions = ExecutionWindow & {
+  amountMinWei?: bigint;
+  amountMaxWei?: bigint;
+  depositAmountWei?: bigint;
 };
 
 const rootDir = resolve(".");
@@ -183,6 +202,7 @@ const walletsDir = process.env.WALLETS_DIR
   ? resolve(process.env.WALLETS_DIR)
   : resolve(runtimeRoot, "wallets");
 const statePath = resolve(dataDir, "state.json");
+const jobsStatePath = resolve(dataDir, "jobs.json");
 const preferredPort = Number(process.env.PORT || process.env.PANEL_PORT || "3210");
 
 const erc20Abi = [
@@ -210,6 +230,7 @@ mkdirSync(walletsDir, { recursive: true });
 let panelState = loadState();
 const jobs = new Map<string, Job>();
 let activeJobId: string | null = null;
+loadPersistedJobs();
 
 const server = createServer(async (req, res) => {
   try {
@@ -365,6 +386,7 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     job.cancelRequested = true;
     job.cancelReason = "Cancelled by operator";
     log(job, "Cancellation requested by operator");
+    persistJobs();
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -374,13 +396,27 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const amount = String(body?.amount || panelState.config.buyAmount);
     const maxConcurrency = positiveInt(body?.maxConcurrency, panelState.config.defaultMaxConcurrency);
     const selection = toSelection(body);
+    const options: BatchExecutionOptions = {
+      amountMinWei: parseOptionalBigInt(body?.amountMin || amount),
+      amountMaxWei: parseOptionalBigInt(body?.amountMax || body?.amountMin || amount),
+      intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
+      intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
+      timeStart: sanitizeTimeOfDay(body?.timeStart),
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+    };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-buy", {
       amount,
+      amountMin: body?.amountMin || amount,
+      amountMax: body?.amountMax || body?.amountMin || amount,
       maxConcurrency,
+      intervalMinSec: body?.intervalMinSec || 0,
+      intervalMaxSec: body?.intervalMaxSec || 0,
+      timeStart: options.timeStart || "",
+      timeEnd: options.timeEnd || "",
       selection
     });
-    runJob(job, (currentJob) => runBatchTrade(currentJob, "buy", amount, maxConcurrency, targets)).catch(() => {});
+    runJob(job, (currentJob) => runBatchTrade(currentJob, "buy", amount, maxConcurrency, targets, options)).catch(() => {});
     sendJson(res, 202, { ok: true, jobId: job.id });
     return;
   }
@@ -390,13 +426,27 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const amount = String(body?.amount || panelState.config.sellAmount);
     const maxConcurrency = positiveInt(body?.maxConcurrency, panelState.config.defaultMaxConcurrency);
     const selection = toSelection(body);
+    const options: BatchExecutionOptions = {
+      amountMinWei: parseOptionalBigInt(body?.amountMin || amount),
+      amountMaxWei: parseOptionalBigInt(body?.amountMax || body?.amountMin || amount),
+      intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
+      intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
+      timeStart: sanitizeTimeOfDay(body?.timeStart),
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+    };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-sell", {
       amount,
+      amountMin: body?.amountMin || amount,
+      amountMax: body?.amountMax || body?.amountMin || amount,
       maxConcurrency,
+      intervalMinSec: body?.intervalMinSec || 0,
+      intervalMaxSec: body?.intervalMaxSec || 0,
+      timeStart: options.timeStart || "",
+      timeEnd: options.timeEnd || "",
       selection
     });
-    runJob(job, (currentJob) => runBatchTrade(currentJob, "sell", amount, maxConcurrency, targets)).catch(() => {});
+    runJob(job, (currentJob) => runBatchTrade(currentJob, "sell", amount, maxConcurrency, targets, options)).catch(() => {});
     sendJson(res, 202, { ok: true, jobId: job.id });
     return;
   }
@@ -406,14 +456,28 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const depositAmount = String(body?.depositAmount || body?.amount || panelState.config.buyAmount);
     const maxConcurrency = positiveInt(body?.maxConcurrency, panelState.config.defaultMaxConcurrency);
     const selection = toSelection(body);
+    const options: BatchExecutionOptions = {
+      depositAmountWei: parseOptionalBigInt(depositAmount),
+      intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
+      intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
+      timeStart: sanitizeTimeOfDay(body?.timeStart),
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+    };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-borrow", {
       depositAmount,
       maxConcurrency,
+      intervalMinSec: body?.intervalMinSec || 0,
+      intervalMaxSec: body?.intervalMaxSec || 0,
+      timeStart: options.timeStart || "",
+      timeEnd: options.timeEnd || "",
       selection
     });
     runJob(job, (currentJob) =>
-      runBatchTrade(currentJob, "borrow", "0", maxConcurrency, targets, { depositAmount })
+      runBatchTrade(currentJob, "borrow", "0", maxConcurrency, targets, {
+        ...options,
+        depositAmountWei: parseOptionalBigInt(depositAmount)
+      })
     ).catch(() => {});
     sendJson(res, 202, { ok: true, jobId: job.id });
     return;
@@ -424,13 +488,27 @@ async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const amount = String(body?.amount || panelState.config.sellAmount);
     const maxConcurrency = positiveInt(body?.maxConcurrency, panelState.config.defaultMaxConcurrency);
     const selection = toSelection(body);
+    const options: BatchExecutionOptions = {
+      amountMinWei: parseOptionalBigInt(body?.amountMin || amount),
+      amountMaxWei: parseOptionalBigInt(body?.amountMax || body?.amountMin || amount),
+      intervalMinMs: positiveInt(body?.intervalMinSec, 0) * 1000,
+      intervalMaxMs: positiveInt(body?.intervalMaxSec, 0) * 1000,
+      timeStart: sanitizeTimeOfDay(body?.timeStart),
+      timeEnd: sanitizeTimeOfDay(body?.timeEnd)
+    };
     const targets = resolveExecutionWallets(panelState, selection);
     const job = createJob("batch-repay", {
       amount,
       maxConcurrency,
+      amountMin: body?.amountMin || amount,
+      amountMax: body?.amountMax || body?.amountMin || amount,
+      intervalMinSec: body?.intervalMinSec || 0,
+      intervalMaxSec: body?.intervalMaxSec || 0,
+      timeStart: options.timeStart || "",
+      timeEnd: options.timeEnd || "",
       selection
     });
-    runJob(job, (currentJob) => runBatchTrade(currentJob, "repay", amount, maxConcurrency, targets)).catch(() => {});
+    runJob(job, (currentJob) => runBatchTrade(currentJob, "repay", amount, maxConcurrency, targets, options)).catch(() => {});
     sendJson(res, 202, { ok: true, jobId: job.id });
     return;
   }
@@ -594,6 +672,43 @@ function persistState() {
     ...panelState.wallets.flatMap((wallet) => wallet.groups)
   ]);
   writeFileSync(statePath, JSON.stringify(panelState, null, 2));
+}
+
+function loadPersistedJobs() {
+  if (!existsSync(jobsStatePath)) return;
+  try {
+    const raw = JSON.parse(readFileSync(jobsStatePath, "utf8")) as {
+      activeJobId?: string | null;
+      jobs?: Job[];
+    };
+
+    const persistedJobs = Array.isArray(raw.jobs) ? raw.jobs : [];
+    for (const job of persistedJobs) {
+      if (job.status === "running" || job.status === "queued") {
+        job.status = "failed";
+        job.cancelRequested = true;
+        job.cancelReason = "Service restarted while job was running";
+        job.error = job.error || "Service restarted while job was running";
+        job.endedAt = new Date().toISOString();
+        job.logs = [...(job.logs || []), `[${new Date().toISOString()}] Service restarted; job marked as failed for safety`].slice(-500);
+      }
+      jobs.set(job.id, job);
+    }
+
+    activeJobId = null;
+  } catch (error) {
+    console.error("Failed to load persisted jobs:", error);
+  }
+}
+
+function persistJobs() {
+  const payload = {
+    activeJobId,
+    jobs: [...jobs.values()]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, 50)
+  };
+  writeFileSync(jobsStatePath, JSON.stringify(payload, null, 2));
 }
 
 function normalizeConfig(config: Partial<PanelConfig>): PanelConfig {
@@ -976,6 +1091,7 @@ function createJob(kind: JobKind, params: Record<string, unknown>) {
 
   jobs.set(job.id, job);
   activeJobId = job.id;
+  persistJobs();
   return job;
 }
 
@@ -983,6 +1099,7 @@ async function runJob(job: Job, runner: (job: Job) => Promise<void>) {
   job.status = "running";
   job.startedAt = new Date().toISOString();
   log(job, `Job ${job.kind} started`);
+  persistJobs();
 
   try {
     await runner(job);
@@ -1006,6 +1123,7 @@ async function runJob(job: Job, runner: (job: Job) => Promise<void>) {
     job.endedAt = new Date().toISOString();
     activeJobId = null;
     saveJobReport(job);
+    persistJobs();
   }
 }
 
@@ -1032,12 +1150,12 @@ async function runBatchTrade(
   amount: string,
   maxConcurrency: number,
   targets: ExecutionWallet[],
-  extra?: { depositAmount?: string }
+  options?: BatchExecutionOptions
 ) {
   validateState(panelState);
   const context = await createContext(panelState);
   const amountWei = BigInt(amount);
-  const depositAmountWei = extra?.depositAmount ? BigInt(extra.depositAmount) : undefined;
+  const depositAmountWei = options?.depositAmountWei;
   const perWalletTimeoutMs = Math.max(30000, context.state.config.receiptTimeoutMs + 60000);
   if (action !== "borrow") validateAmountAgainstRisk(panelState.config, amountWei);
   if (depositAmountWei !== undefined) validateAmountAgainstRisk(panelState.config, depositAmountWei);
@@ -1049,17 +1167,69 @@ async function runBatchTrade(
     wallet: entry.wallet.connect(context.provider)
   }));
 
-  const results = await runWithConcurrency(
-    connectedTargets.map((entry) => async () => {
+  if (maxConcurrency <= 1) {
+    const serialResults: JobResult[] = [];
+    for (let i = 0; i < connectedTargets.length; i++) {
+      const entry = connectedTargets[i];
       assertJobNotCancelled(job);
-      return waitWithTimeout(
+      await waitForExecutionWindow(job, options);
+
+      const effectiveAmountWei =
+        action === "borrow"
+          ? amountWei
+          : pickEffectiveAmountWei(
+              panelState.config,
+              options?.amountMinWei ?? amountWei,
+              options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
+            );
+
+      const result = await waitWithTimeout(
         (async () => {
-          if (action === "buy") return buyForWallet(job, context, entry, amountWei);
-          if (action === "sell") return sellForWallet(job, context, entry, amountWei);
+          if (action === "buy") return buyForWallet(job, context, entry, effectiveAmountWei);
+          if (action === "sell") return sellForWallet(job, context, entry, effectiveAmountWei);
           if (action === "borrow") {
             return borrowForWallet(job, context, entry, amountWei, depositAmountWei ?? amountWei);
           }
-          return repayForWallet(job, context, entry, amountWei);
+          return repayForWallet(job, context, entry, effectiveAmountWei);
+        })(),
+        perWalletTimeoutMs
+      );
+
+      serialResults.push(result);
+      pushResult(job, result);
+      evaluateRiskAfterResult(job);
+      log(job, `#${result.index + 1} ${result.action} ${result.status}${result.error ? `: ${result.error}` : ""}`);
+
+      if (i < connectedTargets.length - 1) {
+        await waitRandomInterval(job, options);
+      }
+    }
+
+    return serialResults;
+  }
+
+  const results = await runWithConcurrency(
+    connectedTargets.map((entry) => async () => {
+      assertJobNotCancelled(job);
+      await waitForExecutionWindow(job, options);
+
+      const effectiveAmountWei =
+        action === "borrow"
+          ? amountWei
+          : pickEffectiveAmountWei(
+              panelState.config,
+              options?.amountMinWei ?? amountWei,
+              options?.amountMaxWei ?? options?.amountMinWei ?? amountWei
+            );
+
+      return waitWithTimeout(
+        (async () => {
+          if (action === "buy") return buyForWallet(job, context, entry, effectiveAmountWei);
+          if (action === "sell") return sellForWallet(job, context, entry, effectiveAmountWei);
+          if (action === "borrow") {
+            return borrowForWallet(job, context, entry, amountWei, depositAmountWei ?? amountWei);
+          }
+          return repayForWallet(job, context, entry, effectiveAmountWei);
         })(),
         perWalletTimeoutMs
       );
@@ -1480,6 +1650,7 @@ function pushResult(job: Job, result: JobResult) {
   } else if (result.status === "cancelled") {
     job.summary.cancelled += 1;
   }
+  persistJobs();
 }
 
 function evaluateRiskAfterResult(job: Job) {
@@ -1551,6 +1722,7 @@ function log(job: Job, message: string) {
   const line = `[${new Date().toISOString()}] ${message}`;
   job.logs.push(line);
   if (job.logs.length > 500) job.logs.shift();
+  persistJobs();
 }
 
 function saveJobReport(job: Job) {
@@ -1606,6 +1778,76 @@ function positiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.floor(parsed);
+}
+
+function parseOptionalBigInt(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text) return undefined;
+  return BigInt(text);
+}
+
+function sanitizeTimeOfDay(value: unknown) {
+  const text = String(value ?? "").trim();
+  return /^\d{2}:\d{2}$/.test(text) ? text : undefined;
+}
+
+function timeOfDayToMinutes(value?: string) {
+  if (!value) return undefined;
+  const [hours, minutes] = value.split(":").map((item) => Number(item));
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return undefined;
+  return hours * 60 + minutes;
+}
+
+function isWithinTimeWindow(now: Date, start?: string, end?: string) {
+  const startMinutes = timeOfDayToMinutes(start);
+  const endMinutes = timeOfDayToMinutes(end);
+  if (startMinutes === undefined || endMinutes === undefined) return true;
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  if (startMinutes <= endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  }
+
+  return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+}
+
+async function waitForExecutionWindow(job: Job, options?: ExecutionWindow) {
+  if (!options?.timeStart || !options?.timeEnd) return;
+
+  while (!isWithinTimeWindow(new Date(), options.timeStart, options.timeEnd)) {
+    log(job, `Outside execution window ${options.timeStart}-${options.timeEnd}, waiting 30s`);
+    await sleepWithCancel(30000, job);
+  }
+}
+
+function randomIntBetween(min: number, max: number) {
+  if (max <= min) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function waitRandomInterval(job: Job, options?: ExecutionWindow) {
+  const min = Math.max(0, options?.intervalMinMs || 0);
+  const max = Math.max(min, options?.intervalMaxMs || min);
+  if (max <= 0) return;
+  const waitMs = randomIntBetween(min, max);
+  log(job, `Waiting ${waitMs}ms before next wallet`);
+  await sleepWithCancel(waitMs, job);
+}
+
+function pickEffectiveAmountWei(config: PanelConfig, min: bigint, max: bigint) {
+  const effectiveMin = min > 0n ? min : max;
+  const effectiveMax = max >= effectiveMin ? max : effectiveMin;
+  if (effectiveMin === effectiveMax) {
+    validateAmountAgainstRisk(config, effectiveMin);
+    return effectiveMin;
+  }
+
+  const span = effectiveMax - effectiveMin;
+  const cap = span > 1000n ? 1000n : span;
+  const offset = BigInt(randomIntBetween(0, Number(cap)));
+  const candidate = effectiveMin + offset;
+  validateAmountAgainstRisk(config, candidate);
+  return candidate;
 }
 
 function sanitizeGroupName(value: string) {
