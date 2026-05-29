@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.local
+panel-data/
+reports/
+wallets/private-keys.env
+wallets/generated-wallets.json
+wallets/generated-wallets2.json
+wallets/addresses.txt
+wallets/addresses.json
+wallets/addresses-remix.txt
+wallets/private-keys2.env
+*.log
+*.out.log
+*.err.log
+npm-debug.log*

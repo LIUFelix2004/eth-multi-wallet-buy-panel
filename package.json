@@ -1,0 +1,40 @@
+{
+  "name": "eth-multi-wallet-buy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "panel": "tsx panel/server.ts",
+    "generate-wallets": "tsx scripts/generate-wallets.ts",
+    "export-addresses": "tsx scripts/export-addresses.ts",
+    "inspect-tx": "tsx scripts/inspect-tx.ts",
+    "check-balances": "tsx scripts/check-balances.ts",
+    "fund-wallets": "tsx scripts/fund-wallets.ts",
+    "buy": "tsx scripts/multi-buy.ts",
+    "scheduled-buy": "tsx scripts/scheduled-buy.ts",
+    "scheduled-random-trade": "tsx scripts/scheduled-random-trade.ts",
+    "scheduled-loop-trade": "tsx scripts/scheduled-loop-trade.ts",
+    "hourly-balanced-trade": "tsx scripts/hourly-balanced-trade.ts",
+    "round-batch-buy": "tsx scripts/round-batch-buy-report.ts",
+    "create-bonding-curve-test-plan": "tsx scripts/create-bonding-curve-concurrency-test-plan.ts",
+    "create-floor-price-test-plan": "tsx scripts/create-floor-price-concurrency-test-plan.ts",
+    "create-no-liquidation-borrow-test-plan": "tsx scripts/create-no-liquidation-borrow-concurrency-test-plan.ts",
+    "create-fee-flywheel-test-plan": "tsx scripts/create-fee-flywheel-concurrency-test-plan.ts",
+    "bonding-curve-test": "tsx scripts/bonding-curve-concurrency-test.ts",
+    "floor-price-test": "tsx scripts/floor-price-concurrency-test.ts",
+    "no-liquidation-borrow-test": "tsx scripts/no-liquidation-borrow-concurrency-test.ts",
+    "fee-flywheel-test": "tsx scripts/fee-flywheel-concurrency-test.ts",
+    "floor-fee-detail": "tsx scripts/floor-fee-injection-detail.ts",
+    "merge-floor-fee-detail": "tsx scripts/merge-floor-fee-detail-into-plan.ts",
+    "referral-plan-test": "tsx scripts/referral-plan-test.ts",
+    "format-referral-report": "tsx scripts/format-referral-report.ts",
+    "sell": "tsx scripts/multi-sell.ts",
+    "borrow": "tsx scripts/multi-borrow.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "tsx": "^4.19.4",
+    "xlsx": "^0.18.5"
+  }
+}

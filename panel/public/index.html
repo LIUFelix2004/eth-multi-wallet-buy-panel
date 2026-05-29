@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Growchain 做市控制台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Growchain Mainnet Operator Console</p>
+          <h1>多钱包主网做市面板</h1>
+          <p class="hero-copy">
+            现在把主操作收敛成一个更轻的做市主页面。先选择动作，再只看地址数、金额、频率、时间段四个核心维度。
+          </p>
+        </div>
+        <div class="hero-side">
+          <div class="stat-card">
+            <span>钱包数量</span>
+            <strong id="walletCount">0</strong>
+          </div>
+          <div class="stat-card active-job-stat" id="activeJobStat">
+            <span class="stat-label-with-dot"><i class="status-dot idle" id="activeJobDot"></i>运行中任务</span>
+            <strong id="activeJob">无</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard-layout">
+        <div class="dashboard-column left-column">
+          <section class="panel-card collapsible-card collapsed slim-card" id="configPanel">
+            <div class="section-head collapsible-head">
+              <div>
+                <h2>链路配置</h2>
+                <div class="inline-note">默认收起，只有调 RPC 或改默认参数时再展开</div>
+              </div>
+              <div class="button-row">
+                <button id="toggleConfigPanelButton" class="ghost-button">展开配置</button>
+                <button id="saveConfigButton" class="ghost-button">保存配置</button>
+              </div>
+            </div>
+            <div class="collapsible-body">
+              <div class="form-grid">
+                <label><span>RPC 地址</span><input id="rpcUrl" placeholder="https://..." /></label>
+                <label><span>目标买卖合约</span><input id="marketContractAddress" placeholder="0x..." /></label>
+                <label><span>目标币合约</span><input id="tokenAddress" placeholder="0x..." /></label>
+                <label><span>支付币合约</span><input id="reserveTokenAddress" placeholder="0x..." /></label>
+                <label><span>交易截止秒数</span><input id="deadlineSeconds" type="number" /></label>
+                <label><span>回执超时 ms</span><input id="receiptTimeoutMs" type="number" /></label>
+                <label><span>默认并发</span><input id="defaultMaxConcurrency" type="number" /></label>
+                <label><span id="buyAmountLabel">默认买入数量</span><input id="buyAmount" /></label>
+                <label><span id="sellAmountLabel">默认卖出数量</span><input id="sellAmount" /></label>
+                <label><span>随机轮数</span><input id="randomRounds" type="number" /></label>
+                <label><span>随机间隔 ms</span><input id="randomIntervalMs" type="number" /></label>
+                <label><span>随机每轮钱包数</span><input id="randomWalletsPerRound" type="number" /></label>
+                <label><span>随机并发</span><input id="randomMaxConcurrency" type="number" /></label>
+                <label><span>买入概率 bps</span><input id="randomBuyProbabilityBps" type="number" /></label>
+                <label><span id="randomReserveKeepAmountLabel">随机支付币保留量</span><input id="randomReserveKeepAmount" /></label>
+                <label><span id="randomTokenKeepAmountLabel">随机目标币保留量</span><input id="randomTokenKeepAmount" /></label>
+                <label><span id="randomMaxSellAmountLabel">随机最大卖出量</span><input id="randomMaxSellAmount" /></label>
+                <label><span>随机卖出分母</span><input id="randomSellDivisor" type="number" /></label>
+              </div>
+              <div class="inline-note config-unit-note" id="configUnitHint">金额类配置按页面显示单位填写，保存时会自动换算成链上最小单位。</div>
+            </div>
+          </section>
+
+          <section class="panel-card collapsible-card collapsed slim-card" id="riskPanel">
+            <div class="section-head collapsible-head">
+              <div>
+                <h2>风控限制</h2>
+                <span class="inline-note">默认收起，任务提交前仍会按这些规则校验</span>
+              </div>
+              <button id="toggleRiskPanelButton" class="ghost-button">展开风控</button>
+            </div>
+            <div class="collapsible-body">
+              <div class="form-grid">
+                <label><span>单次任务最大钱包数</span><input id="riskMaxWalletsPerTask" type="number" /></label>
+                <label><span>单笔最大数量</span><input id="riskMaxAmountWeiPerOrder" /></label>
+                <label><span>最小 Native 余额</span><input id="riskMinNativeBalanceWei" /></label>
+                <label><span>最小支付币余额</span><input id="riskMinReserveBalanceWei" /></label>
+                <label><span>最小目标币余额</span><input id="riskMinTokenBalanceWei" /></label>
+                <label><span>买入后最少保留支付币</span><input id="riskMinReserveLeftWei" /></label>
+                <label><span>卖出后最少保留目标币</span><input id="riskMinTokenLeftWei" /></label>
+                <label><span>总失败阈值</span><input id="riskStopOnTotalFailures" type="number" /></label>
+                <label><span>连续失败阈值</span><input id="riskStopOnConsecutiveFailures" type="number" /></label>
+              </div>
+            </div>
+          </section>
+
+          <section id="walletPanel" class="panel-card wallet-card slim-card">
+            <div class="section-head">
+              <div>
+                <h2>钱包池与分组</h2>
+                <div class="inline-note">表格常驻，导入、分组、标签工具集中放在这里</div>
+              </div>
+              <div class="button-row">
+                <button id="refreshWalletsButton" class="ghost-button">刷新余额</button>
+                <button id="clearWalletsButton" class="danger-button">清空钱包</button>
+              </div>
+            </div>
+
+            <div class="wallet-ops-grid">
+              <section class="ops-panel expanded" id="walletImportPanel">
+                <div class="ops-head">
+                  <div>
+                    <h3>导入钱包</h3>
+                    <div class="inline-note">导入是高频操作，默认展开</div>
+                  </div>
+                  <button id="toggleWalletImportPanelButton" class="ghost-button">收起</button>
+                </div>
+                <div class="ops-body">
+                  <div class="wallet-import-grid">
+                    <label class="textarea-field">
+                      <span>粘贴私钥</span>
+                      <textarea id="privateKeysInput" placeholder="支持逗号、空格或换行分隔"></textarea>
+                    </label>
+                    <div class="wallet-actions">
+                      <label><span>从文件导入</span><input id="walletFilePath" value="wallets/generated-wallets.json" /></label>
+                      <button id="importWalletsButton" class="primary-button">追加导入</button>
+                      <button id="importGeneratedButton" class="ghost-button">读取文件</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ops-panel" id="walletGroupPanel">
+                <div class="ops-head">
+                  <div>
+                    <h3>分组与筛选</h3>
+                    <div class="inline-note">选择、筛选和分组都放在这里</div>
+                  </div>
+                  <button id="toggleWalletGroupPanelButton" class="ghost-button">展开</button>
+                </div>
+                <div class="ops-body hidden">
+                  <div class="control-strip compact-control-strip">
+                    <div class="selection-box">
+                      <div class="button-row">
+                        <button id="selectAllWalletsButton" class="ghost-button">全选当前页</button>
+                        <button id="clearSelectionButton" class="ghost-button">清空选择</button>
+                        <button id="selectEnabledWalletsButton" class="ghost-button">仅选启用</button>
+                      </div>
+                      <label><span>按分组筛选</span><select id="groupFilterSelect"></select></label>
+                    </div>
+                    <div class="group-box">
+                      <label><span>新建分组</span><input id="newGroupName" placeholder="例如: 主网A组" /></label>
+                      <div class="button-row">
+                        <button id="createGroupButton" class="primary-button">创建分组</button>
+                        <button id="deleteGroupButton" class="danger-button">删除分组</button>
+                      </div>
+                      <label><span>分组操作目标</span><select id="groupAssignSelect"></select></label>
+                      <div class="button-row">
+                        <button id="addGroupToSelectedButton" class="ghost-button">添加到已选</button>
+                        <button id="replaceGroupForSelectedButton" class="ghost-button">替换已选</button>
+                        <button id="removeGroupFromSelectedButton" class="ghost-button">从已选移除</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ops-panel" id="walletLabelPanel">
+                <div class="ops-head">
+                  <div>
+                    <h3>批量标签</h3>
+                    <div class="inline-note">只在需要统一打标时展开</div>
+                  </div>
+                  <button id="toggleWalletLabelPanelButton" class="ghost-button">展开</button>
+                </div>
+                <div class="ops-body hidden">
+                  <div class="control-strip compact-control-strip single-control-strip">
+                    <div class="group-box">
+                      <label><span>批量标签前缀</span><input id="bulkLabelPrefix" placeholder="例如: mm-a" /></label>
+                      <label class="toggle-wrap"><input id="bulkLabelReplaceExisting" type="checkbox" checked /><span>覆盖已有标签</span></label>
+                      <button id="applyBulkLabelButton" class="ghost-button">给已选钱包批量打标签</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="wallet-toolbar">
+              <div class="inline-note" id="selectionSummary">已选 0 个钱包</div>
+              <div class="view-toggle">
+                <span>显示模式</span>
+                <div class="button-row">
+                  <button id="compactModeButton" class="ghost-button">紧凑模式</button>
+                  <button id="detailModeButton" class="ghost-button">详细模式</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th></th>
+                    <th>#</th>
+                    <th>钱包</th>
+                    <th>标签</th>
+                    <th>分组</th>
+                    <th>启用</th>
+                    <th class="detail-only">Native</th>
+                    <th class="detail-only">支付币</th>
+                    <th class="detail-only">目标币</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody id="walletTableBody"></tbody>
+              </table>
+            </div>
+            <div class="pagination-bar">
+              <label class="page-size-wrap">
+                <span>每页</span>
+                <select id="walletPageSize">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <div class="pagination-meta" id="walletPaginationMeta">第 1 / 1 页</div>
+              <div class="button-row">
+                <button id="walletPrevPageButton" class="ghost-button">上一页</button>
+                <button id="walletNextPageButton" class="ghost-button">下一页</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="dashboard-column center-column">
+          <section class="panel-card maker-card">
+            <div class="section-head">
+              <div>
+                <h2>做市主面板</h2>
+                <div class="inline-note">四个并行选项，对应四列核心控制项</div>
+              </div>
+              <button id="runMarketActionButton" class="primary-button">启动当前动作</button>
+            </div>
+
+            <div class="market-action-tabs">
+              <button id="marketActionBuy" class="ghost-button market-action-tab active" data-market-action="buy">买入</button>
+              <button id="marketActionSell" class="ghost-button market-action-tab" data-market-action="sell">卖出</button>
+              <button id="marketActionBorrow" class="ghost-button market-action-tab" data-market-action="borrow">借贷</button>
+              <button id="marketActionRepay" class="ghost-button market-action-tab" data-market-action="repay">偿还</button>
+            </div>
+
+            <div class="market-config-stack">
+              <div class="market-config-top-row">
+                <section class="market-config-card market-config-address-card">
+                  <div class="market-config-head">
+                    <h3>地址数</h3>
+                    <button id="openWalletPanelButton" class="ghost-button">展开钱包详情</button>
+                  </div>
+                  <div class="market-metric" id="marketAddressCount">0</div>
+                  <div class="inline-note" id="marketAddressSummary">按当前钱包选择统计</div>
+                </section>
+
+                <section class="market-config-card market-config-frequency-card">
+                  <div class="market-config-head">
+                    <h3>频率</h3>
+                    <span class="inline-note">可设置做市间隔</span>
+                  </div>
+                  <div class="paired-inputs">
+                    <label><span>最小间隔 秒</span><input id="marketIntervalMin" type="number" /></label>
+                    <div class="pair-separator" aria-hidden="true">-</div>
+                    <label><span>最大间隔 秒</span><input id="marketIntervalMax" type="number" /></label>
+                  </div>
+                </section>
+              </div>
+
+              <section class="market-config-card market-config-full">
+                <div class="market-config-head">
+                  <h3>做市金额</h3>
+                  <span class="inline-note" id="marketAmountHint">可设置金额范围</span>
+                </div>
+                <div class="paired-inputs paired-inputs-wide">
+                  <label><span id="marketAmountMinLabel">最小金额</span><input id="marketAmountMin" placeholder="输入金额" /></label>
+                  <div class="pair-separator" aria-hidden="true">-</div>
+                  <label><span id="marketAmountMaxLabel">最大金额</span><input id="marketAmountMax" placeholder="输入金额" /></label>
+                </div>
+              </section>
+
+              <section class="market-config-card market-config-full">
+                <div class="market-config-head">
+                  <h3>时间段</h3>
+                  <span class="inline-note">以北京时间为准</span>
+                </div>
+                <div class="paired-inputs paired-inputs-wide">
+                  <label><span>开始</span><input id="marketTimeStart" type="time" value="09:00" /></label>
+                  <div class="pair-separator" aria-hidden="true">-</div>
+                  <label><span>结束</span><input id="marketTimeEnd" type="time" value="23:00" /></label>
+                </div>
+              </section>
+            </div>
+
+            <div class="market-action-footer">
+              <div class="inline-note" id="marketActionHint">当前已接入买入、卖出；借贷、偿还先保留为入口位。</div>
+              <div class="inline-note" id="marketUnitHint">主面板金额按页面显示单位填写，提交时会自动换算成链上最小单位。</div>
+            </div>
+
+            <div class="task-legacy-inputs hidden">
+              <input id="buyTaskAmount" />
+              <input id="buyTaskConcurrency" type="number" />
+              <input id="sellTaskAmount" />
+              <input id="sellTaskConcurrency" type="number" />
+              <input id="randomTaskRounds" type="number" />
+              <input id="randomTaskIntervalMs" type="number" />
+              <input id="randomTaskWalletsPerRound" type="number" />
+              <input id="randomTaskMaxConcurrency" type="number" />
+              <input id="randomTaskBuyProbabilityBps" type="number" />
+              <input id="randomTaskBuyAmount" />
+              <input id="randomTaskReserveKeepAmount" />
+              <input id="randomTaskTokenKeepAmount" />
+              <input id="randomTaskMaxSellAmount" />
+              <input id="randomTaskSellDivisor" type="number" />
+              <button id="runBuyButton" type="button"></button>
+              <button id="runSellButton" type="button"></button>
+              <button id="runRandomButton" type="button"></button>
+            </div>
+          </section>
+        </div>
+
+        <div class="dashboard-column right-column">
+          <section class="panel-card jobs-card">
+            <div class="section-head">
+              <h2>任务中心</h2>
+              <div class="button-row">
+                <button id="cancelJobButton" class="danger-button">停止当前任务</button>
+                <button id="refreshJobsButton" class="ghost-button">刷新任务</button>
+              </div>
+            </div>
+            <div class="jobs-layout">
+              <div class="jobs-list" id="jobsList"></div>
+              <div class="job-detail">
+                <div class="job-summary" id="jobSummary">
+                  <p>选择一个任务查看详情</p>
+                </div>
+                <div class="job-log-shell">
+                  <div class="job-log-head">
+                    <span>任务日志</span>
+                    <span id="jobLogMeta">等待选择任务</span>
+                  </div>
+                  <pre id="jobLogs">暂无日志</pre>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <div id="confirmModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="section-head">
+          <h2>执行前确认</h2>
+          <button id="closeConfirmModalButton" class="ghost-button">关闭</button>
+        </div>
+        <div id="confirmModalContent" class="modal-content"></div>
+        <div class="button-row">
+          <button id="confirmSubmitButton" class="primary-button">确认执行</button>
+          <button id="cancelConfirmButton" class="ghost-button">返回修改</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
